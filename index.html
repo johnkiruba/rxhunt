@@ -46,6 +46,10 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         .no-select { user-select: none; -webkit-user-select: none; }
+        
+        /* Secret Hint Animation */
+        .fade-in { animation: fadeIn 0.5s ease-in forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -55,14 +59,12 @@
         const { useState, useEffect, useRef } = React;
 
         // --- 1. CONFIGURATION: GEO-FENCED DATA ---
-        // Coordinates extracted from your Excel file
         const QUEST_DB = [
             { 
                 level: 1, 
                 text: "I am the brain of this massive place, Where files move at a steady pace. Named after a leader, simple and true.", 
                 hint: "Shastri Bhavan", 
                 answer: "Pharmafest_Shastri Bhavan", 
-                // Bounds from Excel Row 2
                 bounds: { north: 22.2891157, south: 22.2885971, east: 73.3639803, west: 73.3634143 }
             },
             { 
@@ -70,7 +72,6 @@
                 text: "With poems of India and words so sweet, I stand in stone where the pathways meet.", 
                 hint: "Sarojini Naidu Statue", 
                 answer: "Pharmafest_Sarojini Naidu Statue",
-                // Bounds from Excel Row 3
                 bounds: { north: 22.2895697, south: 22.2892978, east: 73.3637684, west: 73.3634868 }
             },
             { 
@@ -78,7 +79,6 @@
                 text: "White coats and stethoscopes pass through my door. I am not a temple, but I save lives too.", 
                 hint: "PSH Hospital", 
                 answer: "Pharmafest_PSH",
-                // Bounds from Excel Row 4
                 bounds: { north: 22.2872338, south: 22.2868297, east: 73.3644080, west: 73.3638206 }
             },
             { 
@@ -86,7 +86,6 @@
                 text: "I focus on the soil, the seed, and the grain, Without my science, there is no harvest to gain.", 
                 hint: "Agricultural Building", 
                 answer: "Pharmafest_Agricultural Building",
-                // Bounds from Excel Row 5
                 bounds: { north: 22.2921508, south: 22.2917757, east: 73.3664726, west: 73.3660300 }
             },
             { 
@@ -94,10 +93,9 @@
                 text: "Known as the Iron Lady, strong and bold. I stand tall watching the traffic go by.", 
                 hint: "Indira Gandhi Statue", 
                 answer: "Pharmfest_Indira Gandhi Statue",
-                // Bounds from Excel Row 6
                 bounds: { north: 22.2921703, south: 22.2919864, east: 73.3634560, west: 73.3632388 }
             },
-            // Levels 2-5 (No Geofence required for now, but added for structure)
+            // Levels 2-5 (No Geofence needed for demo)
             { level: 2, text: "Plans pause here without permission. Conversations begin strong and dissolve halfway. Cups leave empty.", hint: "Tea Post", answer: "Pharmafest2026_teapost" },
             { level: 3, text: "Always watching, never seen. Memory exists without opinion.", hint: "Security/CCTV", answer: "Pharmafest2026_security" },
             { level: 5, text: "White coats here do not rush toward patients. They move toward doubt.", hint: "Research Center", answer: "Pharmafest2026_research" }
@@ -130,7 +128,8 @@
             MapPin: () => <Icon p="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z M12 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />,
             Check: () => <Icon p="M20 6L9 17l-5-5" />,
             X: () => <Icon p="M18 6L6 18M6 6l12 12" />,
-            Alert: () => <Icon p="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01" />
+            Alert: () => <Icon p="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01" />,
+            Bulb: () => <Icon p="M9 18h6 M10 22h4 M12 2v1 M12 15a4 4 0 1 0-4-4" />
         };
 
         // --- 4. MAIN APP ---
@@ -144,7 +143,11 @@
             const [photo, setPhoto] = useState(null);
             const [error, setError] = useState("");
             const [loading, setLoading] = useState(false);
-            const [gpsStatus, setGpsStatus] = useState("idle"); // idle, checking, success, fail
+            const [gpsStatus, setGpsStatus] = useState("idle"); 
+
+            // SECRET HINT STATE
+            const [hintUnlocked, setHintUnlocked] = useState(false);
+            const [badgeTapCount, setBadgeTapCount] = useState(0);
 
             const qrRef = useRef(null);
             const proofRef = useRef(null);
@@ -174,14 +177,9 @@
                 const inst = e.target.inst.value;
                 if (!name || !inst) return setError("Required fields missing");
 
-                // Generate Route: All 5 geofenced questions first, then random
+                // Generate Route: Shuffle Level 1s
                 const level1Qs = QUEST_DB.filter(q => q.level === 1);
-                // Randomize the order of level 1 questions? Or keep sequential?
-                // Let's shuffle Level 1 for variety
                 const shuffledL1 = level1Qs.sort(() => 0.5 - Math.random());
-                
-                // Add one level 2, one level 3 etc if needed. 
-                // For now, let's just use the shuffled level 1s as the demo
                 const newRoute = [...shuffledL1];
 
                 const team = { name, institute: inst, start: Date.now() };
@@ -195,13 +193,29 @@
                 setGameState('PLAYING');
             };
 
-            // --- THE GEO-FENCED SCAN TRIGGER ---
+            // SECRET TRIGGER
+            const handleBadgeTap = () => {
+                const now = Date.now();
+                // Reset if taps are too slow
+                if (badgeTapCount === 0) {
+                    setBadgeTapCount(1);
+                    setTimeout(() => setBadgeTapCount(0), 2000); // 2 seconds to tap 3 times
+                } else {
+                    const newCount = badgeTapCount + 1;
+                    if (newCount >= 3) {
+                        setHintUnlocked(true);
+                        setBadgeTapCount(0);
+                    } else {
+                        setBadgeTapCount(newCount);
+                    }
+                }
+            };
+
             const initiateScan = () => {
                 const currentQ = route[level];
                 setError("");
                 setGpsStatus("checking");
 
-                // If no bounds defined (Level 2+), skip check
                 if (!currentQ.bounds) {
                     setGpsStatus("success");
                     qrRef.current.click();
@@ -210,7 +224,7 @@
 
                 if (!navigator.geolocation) {
                     setGpsStatus("fail");
-                    setError("Geolocation is not supported by your browser.");
+                    setError("Geolocation not supported.");
                     return;
                 }
 
@@ -219,14 +233,9 @@
                         const { latitude, longitude } = position.coords;
                         const { north, south, east, west } = currentQ.bounds;
 
-                        // Debug Check (Optional: Remove in production)
-                        console.log(`User: ${latitude}, ${longitude}`);
-                        console.log(`Target: N${north} S${south} E${east} W${west}`);
-
-                        // CHECK IF INSIDE BOX
                         if (latitude <= north && latitude >= south && longitude <= east && longitude >= west) {
                             setGpsStatus("success");
-                            qrRef.current.click(); // OPEN CAMERA PROGRAMMATICALLY
+                            qrRef.current.click();
                         } else {
                             setGpsStatus("fail");
                             setError("You are NOT at the correct location. Move inside the area to scan.");
@@ -234,7 +243,7 @@
                     },
                     (err) => {
                         setGpsStatus("fail");
-                        setError("Location access denied or failed. Please enable GPS.");
+                        setError("Location access denied. Enable GPS.");
                     },
                     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
                 );
@@ -267,12 +276,12 @@
                 e.preventDefault();
                 const currentQ = route[level];
                 
-                // Flexible matching
                 if (inputCode.trim().toUpperCase().includes(currentQ.answer.toUpperCase()) || 
                     currentQ.answer.toUpperCase().includes(inputCode.trim().toUpperCase())) {
                     
                     confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
                     setStep('PROOF');
+                    setHintUnlocked(false); // Reset hint for next level
                 } else {
                     setError("Incorrect QR Code for this location.");
                 }
@@ -301,6 +310,7 @@
                     setInputCode("");
                     setPhoto(null);
                     setGpsStatus("idle");
+                    setHintUnlocked(false);
                 }
                 window.scrollTo(0,0);
             };
@@ -346,18 +356,31 @@
                     {/* Header */}
                     <div className="bg-white/80 backdrop-blur-md sticky top-0 z-10 px-6 py-4 flex justify-between items-center shadow-sm">
                         <h1 className="font-bold text-green-900 select-none">Rx Hunt</h1>
-                        <span className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full">Level {level + 1}/{route.length}</span>
+                        
+                        {/* SECRET TRIGGER AREA: LEVEL BADGE */}
+                        <span 
+                            onClick={handleBadgeTap}
+                            className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full cursor-pointer select-none active:scale-90 transition-transform"
+                        >
+                            Level {level + 1}/{route.length}
+                        </span>
                     </div>
 
                     <div className="p-6 max-w-lg mx-auto">
                         {step === 'HUNT' ? (
-                            <div className="glass-panel p-6 rounded-3xl space-y-6 slide-in">
+                            <div className="glass-panel p-6 rounded-3xl space-y-6 slide-in relative">
                                 {/* Clue */}
                                 <div className="text-center">
                                     <div className="inline-block p-3 bg-green-100 rounded-full text-green-600 mb-3"><Icons.MapPin /></div>
                                     <h2 className="text-xl font-bold text-gray-800 mb-2">Find Location #{level + 1}</h2>
                                     <p className="text-lg text-gray-600 italic no-select">"{q.text}"</p>
-                                    <p className="mt-4 text-xs text-green-600 bg-green-50 inline-block px-3 py-1 rounded-lg border border-green-100">Hint: {q.hint}</p>
+                                    
+                                    {/* HIDDEN HINT AREA */}
+                                    {hintUnlocked && (
+                                        <div className="mt-4 bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-xl text-sm flex gap-2 justify-center items-center fade-in">
+                                            <Icons.Bulb s={16} /> <span>{q.hint}</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Scanner Logic */}
